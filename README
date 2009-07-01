@@ -5,3 +5,13 @@ ProxMon was written in Python and relied on a third party proxy (WebScarab was
 recommented).  I started on a rewrite in Ruby back in early 2008, but didn't get
 far due to other commitments.
 
+The poc directory contains various proof of concept code:
+poc/httplog.rb:
+- Trivial HTTP proxy that just logs requests in the standard WebScarab format
+
+poc/sslmitm.rb
+- SSL MITM proxy.  Can be used with Firefox if you import the CA it creates
+  in the CA subdirectory.
+
+poc/quickcert.rb
+- Needed by sslmitm.  From http://segment7.net/projects/ruby/QuickCert/
