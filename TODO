@@ -1,3 +1,13 @@
+Todo:
+- Don't overwrite logs ($count always starts at 0, even if there are existing files)
+- Web UI for managing proxy settings
+  - Give instructions to user on first load
+    - Import CA certificate
 - Check out
   - shrew (ruby proxy) - 
   - rbwebproxy (ruby proxy) - http://raa.ruby-lang.org/cache/rbwebproxy/rbwebproxy-0.4.0.tar.gz 
+
+Done:
+- Get working with firefox with minimal config changes
+- Clean up old attackproxy poc and import to malignproxy
+- Set up project at github

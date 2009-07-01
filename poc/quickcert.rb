@@ -1,5 +1,5 @@
 require 'openssl'
-##
+# QuickCert from http://segment7.net/projects/ruby/QuickCert/
 # QuickCert allows you to quickly and easily create SSL
 # certificates.  It uses a simple configuration file to generate
 # self-signed client and server certificates.
