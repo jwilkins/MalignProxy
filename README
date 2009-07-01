@@ -1,0 +1,7 @@
+MalignProxy
+-----------
+A couple of years ago I wrote ProxMon (http://www.isecpartners.com/proxmon.html).
+ProxMon was written in Python and relied on a third party proxy (WebScarab was
+recommented).  I started on a rewrite in Ruby back in early 2008, but didn't get
+far due to other commitments.
+
