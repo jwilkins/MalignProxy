@@ -1,17 +1,40 @@
-LIB_PATH = File.expand_path(File.dirname(__FILE__)+'/../lib')
+MITM_ROOT = File.expand_path(File.dirname(__FILE__))
+LOG_DIR = "#{MITM_ROOT}/logs"
+Dir.mkdir(LOG_DIR) unless File.exists?(LOG_DIR)
 
 require 'rubygems'
 require 'mechanize'
+require 'logger'
 require 'net/http'
 require 'webrick'
 require 'webrick/https'
 require 'webrick/httpproxy'
 require 'webrick/log'
-require "#{LIB_PATH}/quickcert"
+require "#{MITM_ROOT}/lib/quickcert"
 require 'ruby-debug'
+
+require 'plugin'
 
 $DEBUG = false # sets debugging in webrick
 $verbose = true
+
+def load_plugins(dir)
+  unless File::stat(dir).directory?
+    puts "Plugin dir #{dir} isn't a directory"
+    exit
+  end
+
+  puts "Loading plugins:"
+  Dir["#{dir}/*.rb"].each{ |plug| load plug; }
+  loaded_plugins = []
+  Plugin.plugins.each { |plug|
+    puts "  - #{plug.name}"
+    loaded_plugins << plug.new
+  }
+  loaded_plugins
+end
+
+$plugins = load_plugins("#{MITM_ROOT}/plugins")
 
 def hexdump(str)
   i = 0
@@ -172,10 +195,6 @@ class SSLMITM < WEBrick::HTTPProxyServer
   end
 end
 
-MITM_ROOT = File.expand_path(File.dirname(__FILE__))
-LOG_DIR = "#{MITM_ROOT}/logs"
-Dir.mkdir(LOG_DIR) unless File.exists?(LOG_DIR)
-
 s = SSLMITM.new(
   :Port => 9999,
   :HTTPVersion => "1.0",
@@ -186,6 +205,9 @@ s = SSLMITM.new(
     puts "-" * 60
     puts "sslmitm: in RequestCallback" if $verbose
     $count ||= 0
+    $plugins.each { |plug|
+      plug.request(req.request_line, req.header, req.body);
+    }
     req.header.delete('accept-encoding')
     open("#{LOG_DIR}/#{$count}-request", "wb+") { |f|
       f << req.request_line
@@ -197,6 +219,9 @@ s = SSLMITM.new(
   :ProxyContentHandler => Proc.new { |req,res|
     puts "-" * 40
     puts "sslmitm: in ProxyContentHandler" if $verbose
+    $plugins.each { |plug|
+      plug.response(res.status_line, res.header, res.body);
+    }
     open("#{LOG_DIR}/#{$count}-response", "wb+") { |f|
       f << res.status_line
       res.header.keys.each { |k|
