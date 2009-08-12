@@ -7,6 +7,9 @@ class NoGzipPlugin < Plugin
   version "0.0.1"
 
   def request(req_line, headers, body)
-    headers.delete('accept-encoding')
+    if headers.include?('accept-encoding')
+      puts "removing accept-encoding header in NoGzipPlugin"
+      headers.delete('accept-encoding')
+    end
   end
 end
