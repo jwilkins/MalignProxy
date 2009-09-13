@@ -7,11 +7,11 @@ class NullPlugin < Plugin
   version "0.0.1"
 
   def initialize
-    puts "    Inside NullPlugin: Initializing"
+    puts "    Inside NullPlugin.initializing" if $verbose
     super
   end
 
   def request(req_line, headers, body)
-    puts "    Inside NullPlugin: Running"
+    puts "    Inside NullPlugin.request" if $verbose
   end
 end

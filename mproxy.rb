@@ -1,3 +1,5 @@
+# XXX: Doesn't log non-ssl (plugins not getting called for non-ssl connections)
+
 MITM_ROOT = File.expand_path(File.dirname(__FILE__))
 LOG_DIR = "#{MITM_ROOT}/logs"
 Dir.mkdir(LOG_DIR) unless File.exists?(LOG_DIR)
@@ -18,7 +20,8 @@ require 'ruby-debug'
 require 'plugin'
 
 $DEBUG = false # sets debugging in webrick
-$verbose = true
+$verbose = true # verbose debugging for mproxy
+$count = -1
 
 $plugins = load_plugins("#{MITM_ROOT}/plugins")
 
@@ -34,7 +37,6 @@ end
 # @spoofed_hosts is a hash of existing mitm server objects indexed by name
 class SSLMITM < WEBrick::HTTPProxyServer
   def initialize(config)
-    super
     # XXX: agent should be per client
     @agent = WWW::Mechanize.new
     @agent.keep_alive = false
@@ -42,7 +44,8 @@ class SSLMITM < WEBrick::HTTPProxyServer
     @spoofed_hosts = {}
     @mitm_port = 4433
     @retry_count = 0
-    config[:Logger] = WEBrick::Log::new('error.log', 5)
+    config[:Logger] = WEBrick::Log::new("#{LOG_DIR}/error.log", 5)
+    super
   end
 
   def ssl_mitm(server, port)
@@ -63,7 +66,7 @@ class SSLMITM < WEBrick::HTTPProxyServer
         if @retry_count < 10
           retry
         else
-          puts "Not retrying, too many tries already"
+          puts "Couldn't allocate port in SSLMITM, not retrying, too many tries already"
           exit
         end
       end
@@ -71,32 +74,40 @@ class SSLMITM < WEBrick::HTTPProxyServer
       @spoofed_hosts[dest] = mitm
 
       mitm.mount_proc('/') { |req,res|
-        puts ""
-        puts "-" * 20
-        puts ""
+        puts "Request: #{req.request_line}"
+        $plugins.each { |plug|
+          plug.request(req.request_line, req.header, req.body);
+        }
+
         meth, url, ver = req.request_line.split(" ")
         # XXX: validate meth and ver
-        puts "SSLMITM.ssl_mitm.mount_proc: #{req.request_line}"
         agent = WWW::Mechanize.new
         agent.keep_alive = false
+        puts "  doing #{meth.upcase}" if $verbose
         case meth.upcase
         when 'GET':
-          puts "  doing GET" if $verbose
           r = agent.get("https://#{server}:#{port}#{url}", req.body, req.header)
         when 'HEAD':
-          puts "  doing HEAD" if $verbose
-          r = agent.head("https://#{server}:#{port}#{url}", req.body, req.header)
+          # FIXME: 2nd param should be QS params
+          r = agent.head("https://#{server}:#{port}#{url}", {}, :headers => req.header)
         when 'POST':
-          puts "  doing POST" if $verbose
-          r = agent.post("https://#{server}:#{port}#{url}", req.body, req.header)
+          # FIXME: need to handle headers
+          r = agent.post("https://#{server}:#{port}#{url}", req.body)
         else
           puts "Not handling #{meth} yet"
         end
-        #puts "r.body: #{r.body[0..20].unpack('h2*')}" if $verbose
-        puts "r.body:\n#{hexdump(r.body[0..32])}"
+
+        status_line = "HTTP/1.1 #{r.code} OK\r\n"
+        puts "Response: #{status_line}"
+        $plugins.each { |plug|
+          # FIXME: get real HTTP ver and response msg
+          plug.response(status_line, r.response, r.body);
+        }
+
+        puts "  Body:\n#{hexdump(r.body[0..31])}"
         res.body = r.body
-        puts "r.header.keys: #{r.header.keys.sort.join(", ")}" if $verbose
-        puts "r.connection #{r.header['connection']}"
+        puts "  Header.keys: #{r.header.keys.sort.join(", ")}" if $verbose
+        puts "  Connection #{r.header['connection']}" if $verbose
         r.header.keys.each { |k|
           unless k == 'content-encoding'
             res.header[k] = r.header[k]
@@ -110,7 +121,8 @@ class SSLMITM < WEBrick::HTTPProxyServer
   end
 
   def proxy_connect(req, res)
-    puts "in hijacked proxy_connect, req.request_line: #{req.request_line}" if $verbose
+    puts "SSLMITM.proxy_connect" if $verbose
+    puts "  req.request_line: #{req.request_line}" if $verbose
     host, port = req.unparsed_uri.split(":")
     unless port then port = 443; end
     mitm_port = ssl_mitm(host, port)
@@ -125,35 +137,32 @@ s = SSLMITM.new(
   :MaxClients => 1,
   :ServerSoftware => "MalignProxy/0.0.1",
   :RequestCallback => Proc.new { |req,res|
-    puts ""
-    puts "-" * 60
-    puts "sslmitm: in RequestCallback" if $verbose
-    $count ||= 0
-    $plugins.each { |plug|
-      plug.request(req.request_line, req.header, req.body);
-    }
-    open("#{LOG_DIR}/#{$count}-request", "wb+") { |f|
-      f << req.request_line
-      f << req.raw_header
-      f << "\r\n"
-      f.write(req.body) if req.body && req.body.length > 0
-    }
+    # Called on request data
+    $count += 1
+    puts "\n--- #{$count} #{'-'*40}"
+    if $verbose
+      puts "sslmitm.RequestCallback"
+      puts "  #{req.request_line}"
+    end
+    meth, url, ver = req.request_line.split(" ")
+    unless meth == 'CONNECT'
+      $plugins.each { |plug|
+        plug.request(req.request_line, req.header, req.body);
+      }
+    end
   },
   :ProxyContentHandler => Proc.new { |req,res|
-    puts "-" * 40
-    puts "sslmitm: in ProxyContentHandler" if $verbose
-    $plugins.each { |plug|
-      plug.response(res.status_line, res.header, res.body);
-    }
-    open("#{LOG_DIR}/#{$count}-response", "wb+") { |f|
-      f << res.status_line
-      res.header.keys.each { |k|
-        f << "#{k.capitalize}: #{res.header[k]}\r\n"
+    # Called for response data
+    if $verbose
+      puts "sslmitm.ProxyContentHandler" 
+      puts "  #{req.request_line}"
+    end
+    meth, url, ver = req.request_line.split(" ")
+    unless meth == 'CONNECT'
+      $plugins.each { |plug|
+        plug.response(res.status_line, res.header, res.body);
       }
-      f << "\r\n"
-      f.write(res.body) if res.body && res.body.length > 0
-    }
-    $count += 1
+    end
   }
 );
 
