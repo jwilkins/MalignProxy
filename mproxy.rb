@@ -5,7 +5,6 @@ LOG_DIR = "#{MITM_ROOT}/logs"
 Dir.mkdir(LOG_DIR) unless File.exists?(LOG_DIR)
 
 require 'rubygems'
-require 'mechanize'
 require 'logger'
 require 'net/http'
 require 'webrick'
@@ -15,7 +14,18 @@ require 'webrick/log'
 require "#{MITM_ROOT}/lib/quickcert"
 require "#{MITM_ROOT}/lib/util"
 require "#{MITM_ROOT}/lib/webrick_ssl_serialno"
-require 'ruby-debug'
+
+begin
+  require 'mechanize'
+rescue LoadError
+  puts "Please install the mechanize gem"
+  exit
+end
+
+begin
+  require 'ruby-debug'
+rescue LoadError
+end
 
 require 'plugin'
 
@@ -85,12 +95,12 @@ class SSLMITM < WEBrick::HTTPProxyServer
         agent.keep_alive = false
         puts "  doing #{meth.upcase}" if $verbose
         case meth.upcase
-        when 'GET':
+        when 'GET'
           r = agent.get("https://#{server}:#{port}#{url}", req.body, req.header)
-        when 'HEAD':
+        when 'HEAD'
           # FIXME: 2nd param should be QS params
           r = agent.head("https://#{server}:#{port}#{url}", {}, :headers => req.header)
-        when 'POST':
+        when 'POST'
           # FIXME: need to handle headers
           r = agent.post("https://#{server}:#{port}#{url}", req.body)
         else
